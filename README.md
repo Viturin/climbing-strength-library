@@ -9,3 +9,20 @@ The project will follow Printable Spells' architecture with an OpenAPI contract,
 ## Roadmap
 
 Follow the [issue backlog](https://github.com/Viturin/climbing-strength-library/issues) for the application, exercise catalog, 3D viewer, and staging deployment.
+
+## Run the browser prototype
+
+Open this checkout in IntelliJ with Node.js support enabled. Set the project Node interpreter to Node.js 24 and run **Climbing Strength Library — Web**. Open `http://localhost:5174`. The launcher installs locked dependencies on first run and when the lockfile changes.
+
+From a terminal, run `npm --prefix web run dev:local`. To try on a phone on the same trusted network, run `npm --prefix web run dev -- --host 0.0.0.0` after installing dependencies, then open your computer's LAN address on port 5174.
+
+### 3D asset
+
+The mannequin is the Superhero Male from [Quaternius Universal Base Characters Standard](https://quaternius.itch.io/universal-base-characters), distributed under [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The base GLB was obtained from [the Avatar project's conversion](https://github.com/programasweights/avatar/blob/main/ASSETS.md). The editable animation source is `web/scripts/bake.mjs`. Run `node web/scripts/bake.mjs` after installing dependencies to regenerate the browser GLB.
+
+### Animation handoff
+
+- `animation/quaternius-base.glb` contains the source skeleton. The viewer hides its skinned mesh and draws the robot body and grips in `web/src/robot.ts`.
+- `web/scripts/bake.mjs` is the editable source for both grips. It samples the reps at 30 fps, solves the arm chains against fixed wrist targets, checks elbow flexion and position, and adds a small delayed leg swing. The motion uses authored timing curves.
+- From the repository root, run `npm --prefix web ci --include=optional` and `node web/scripts/bake.mjs`. This regenerates `web/public/pull-up.glb` with the **Pull-up** and **Chin-up** clips. The fallback image `web/public/pull-up.png` is a Chromium canvas capture of the paused overhand starting pose.
+- Run `npm --prefix web run build` and `npm --prefix web test` after installing Playwright Chromium. Use the viewer's **Front** and **Side** controls to review wrist contact and elbow paths for both grips.
