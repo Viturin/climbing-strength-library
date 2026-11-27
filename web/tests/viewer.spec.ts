@@ -36,3 +36,19 @@ test('shows the poster and cue when the model fails', async ({ page }) => {
   await expect.poll(() => poster.evaluate((image: HTMLImageElement) => image.naturalWidth)).toBeGreaterThan(0);
   await expect(page.getByText('Hang from the bar.', { exact: false })).toBeVisible();
 });
+
+test('can preview all five climbing wall angles', async ({ page }) => {
+  const errors: Error[] = [];
+  page.on('pageerror', error => errors.push(error));
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Climbing walls' }).click();
+  for (const name of ['Slab', 'Vertical', 'Overhang', 'Heavy overhang', 'Roof']) {
+    await page.getByRole('button', { name, exact: true }).click();
+    await expect(page.getByLabel(`${name} climbing wall demonstration`)).toBeVisible();
+    await page.getByRole('button', { name: 'Side', exact: true }).click();
+  }
+  await page.getByRole('button', { name: 'Replay', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Pause' })).toBeVisible();
+  expect(errors).toEqual([]);
+});
