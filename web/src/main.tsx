@@ -6,6 +6,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import './style.css';
 import { createRobot } from './robot';
+import { ClimbingWall } from './ClimbingWall';
 
 type Viewer = { view: (side: boolean) => void; replay: () => void; grip: (underhand: boolean) => void };
 
@@ -151,4 +152,15 @@ function App() {
   </main>;
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+function Library() {
+  const [wall, setWall] = useState(false);
+  return <>
+    <nav className="exercise-nav controls" aria-label="Exercise collection">
+      <button aria-pressed={!wall} onClick={() => setWall(false)}>Bar exercises</button>
+      <button aria-pressed={wall} onClick={() => setWall(true)}>Climbing walls</button>
+    </nav>
+    {wall ? <ClimbingWall /> : <App />}
+  </>;
+}
+
+createRoot(document.getElementById('root')!).render(<Library />);

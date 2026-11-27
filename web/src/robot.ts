@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-export function createRobot(rig: THREE.Object3D, scene: THREE.Scene) {
+export function createRobot(rig: THREE.Object3D, scene: THREE.Object3D, wallGrip: boolean | 'flat' = false) {
   const robot = new THREE.Group();
   scene.add(robot);
   const shell = new THREE.MeshStandardMaterial({ color: '#dce1d9', roughness: 0.36, metalness: 0.3 });
@@ -64,7 +64,27 @@ export function createRobot(rig: THREE.Object3D, scene: THREE.Scene) {
     ball(name('lowerarm'), [0.04, 0.04, 0.04]);
     ball(name('thigh'), [0.05, 0.05, 0.05]);
     ball(name('calf'), [0.043, 0.043, 0.043], accent);
-    ball(name('foot'), [0.043, 0.033, 0.074], joint, -0.027, 0.04);
+    if (wallGrip) {
+      const ankle = bone(name('foot'));
+      const shoe = new THREE.Group();
+      for (const [radii, color, y, z] of [
+        [[0.043, 0.031, 0.072], accent, -0.014, 0.035],
+        [[0.044, 0.011, 0.085], joint, -0.026, 0.041],
+        [[0.034, 0.018, 0.043], joint, -0.018, 0.083],
+      ] as const) {
+        const part = new THREE.Mesh(sphere, color);
+        part.scale.set(radii[0], radii[1], radii[2]);
+        part.position.set(0, y, z);
+        shoe.add(part);
+      }
+      robot.add(shoe);
+      updates.push(() => {
+        ankle.getWorldPosition(shoe.position);
+        ankle.getWorldQuaternion(shoe.quaternion);
+      });
+    } else {
+      ball(name('foot'), [0.043, 0.033, 0.074], joint, -0.027, 0.04);
+    }
     const wrist = bone(name('hand'));
     const hand = new THREE.Group();
     robot.add(hand);
@@ -78,7 +98,9 @@ export function createRobot(rig: THREE.Object3D, scene: THREE.Scene) {
     // Model the fingers as curved links wrapping the cylinder. Mirroring the
     // grip across the bar reverses both the palm and the visible thumb.
     for (const x of [-0.035, -0.012, 0.012, 0.035]) {
-      const curl = new THREE.CatmullRomCurve3([
+      const curl = new THREE.CatmullRomCurve3(wallGrip === 'flat' ? [
+        new THREE.Vector3(x, 0.056, 0), new THREE.Vector3(x, 0.080, 0), new THREE.Vector3(x, 0.102, 0),
+      ] : [
         new THREE.Vector3(x, 0.061, 0.002),
         new THREE.Vector3(x, 0.091, -0.013),
         new THREE.Vector3(x, 0.082, -0.046),
@@ -89,14 +111,19 @@ export function createRobot(rig: THREE.Object3D, scene: THREE.Scene) {
     const thumbSide = side === 'l' ? 1 : -1;
     const thumb = new THREE.CatmullRomCurve3([
       new THREE.Vector3(thumbSide * 0.036, 0.024, 0.006),
-      new THREE.Vector3(thumbSide * 0.059, 0.049, -0.016),
-      new THREE.Vector3(thumbSide * 0.038, 0.055, -0.043),
+      new THREE.Vector3(thumbSide * 0.059, 0.049, wallGrip === 'flat' ? 0 : -0.016),
+      new THREE.Vector3(thumbSide * 0.038, 0.055, wallGrip === 'flat' ? 0 : -0.043),
     ]);
     hand.add(new THREE.Mesh(new THREE.TubeGeometry(thumb, 8, 0.012, 7, false), accent));
     updates.push(underhand => {
       wrist.getWorldPosition(hand.position);
       // The mannequin faces +Z. Overhand palms face away from its torso.
-      hand.rotation.y = underhand ? 0 : Math.PI;
+      hand.rotation.set(
+        0,
+        wallGrip || !underhand ? Math.PI : 0,
+        wallGrip === 'flat' ? (side === 'l' ? -1 : 1) * Math.PI / 2 : 0,
+        'ZYX',
+      );
     });
   }
 
