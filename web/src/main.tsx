@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import './style.css';
+import { createRobot } from './robot';
 
 type Viewer = { view: (side: boolean) => void; replay: () => void };
 
@@ -57,6 +58,7 @@ function App() {
 
     let disposed = false;
     let mixer: THREE.AnimationMixer | undefined;
+    let updateRobot: (() => void) | undefined;
     let previous = performance.now();
     const fail = () => { if (!disposed) setStatus('failed'); };
     renderer.domElement.addEventListener('webglcontextlost', fail);
@@ -65,7 +67,9 @@ function App() {
       const { barY, barZ } = userData;
       const clip = animations[0];
       if (!clip || !Number.isFinite(barY) || !Number.isFinite(barZ)) { fail(); return; }
+      model.traverse(object => { if (object instanceof THREE.Mesh) object.visible = false; });
       scene.add(model);
+      updateRobot = createRobot(model, scene);
       const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.6, 24),
         new THREE.MeshStandardMaterial({ color: '#284c42', metalness: 0.25 }));
       bar.rotation.z = Math.PI / 2;
@@ -79,6 +83,7 @@ function App() {
     }, undefined, fail);
     renderer.setAnimationLoop(now => {
       if (playing.current) mixer?.update(Math.min((now - previous) / 1000, 0.05));
+      updateRobot?.();
       previous = now;
       renderer.render(scene, camera);
     });
