@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const root = new URL('../', import.meta.url);
@@ -23,7 +24,9 @@ function canLoadRolldown(quiet) {
   ], { cwd: root, stdio: quiet ? 'ignore' : 'inherit' }).status === 0;
 }
 if (!existsSync(stamp) || readFileSync(stamp, 'utf8') !== fingerprint || !canLoadRolldown(true)) {
-  run(['ci', '--include=optional']);
+  // All locked dependencies are public. Keep personal registry settings out of this install.
+  run(['ci', '--include=optional', '--registry=https://registry.npmjs.org/',
+    '--userconfig', fileURLToPath(new URL('.npmrc', root))]);
   if (!canLoadRolldown(false)) {
     console.error('Vite’s native binding could not load after reinstalling dependencies.');
     process.exit(1);
