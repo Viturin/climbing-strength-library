@@ -11,3 +11,4 @@ header p { max-width: 48ch; }
 .controls { display: flex; flex-wrap: wrap; gap: .65rem; padding: .75rem 0; }
 button { background: #25493d; color: white; border: 0; border-radius: .5rem; min-height: 44px; padding: 0 1rem; font: inherit; cursor: pointer; }
 button:focus-visible { outline: 3px solid #576d12; outline-offset: 3px; }
+.controls [aria-pressed="false"] { background: #e7efec; color: #172f28; }

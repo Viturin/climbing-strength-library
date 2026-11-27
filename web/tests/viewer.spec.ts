@@ -6,6 +6,11 @@ test('renders the model and supports playback and view changes', async ({ page }
   const pause = page.getByRole('button', { name: 'Pause' });
   await pause.click();
   await expect(page.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Underhand', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Chin-up' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Underhand', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Overhand', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Pull-up', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Side' }).click();
   await expect(page.locator('canvas')).toBeVisible();
   await page.getByRole('button', { name: 'Front' }).click();
@@ -23,7 +28,7 @@ test('honors reduced motion on a mobile viewport', async ({ page }) => {
 });
 
 test('shows the poster and cue when the model fails', async ({ page }) => {
-  await page.route('**/scapular-pull-up.glb', route => route.abort());
+  await page.route('**/pull-up.glb', route => route.abort());
   await page.goto('/');
   await expect(page.getByRole('status')).toContainText('viewer is unavailable');
   const poster = page.getByRole('img', { name: 'Mannequin hanging from a pull-up bar' });

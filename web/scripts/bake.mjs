@@ -39,56 +39,95 @@ const shoulder = world(arms[0].upper);
 const wristY = shoulder.y + arms[0].a + arms[0].b - 0.012;
 const barZ = shoulder.z + 0.035;
 const up = new Vector3(0, 1, 0);
-const tracks = new Map();
-const times = [];
-function record(node, path) {
-  const key = bones.indexOf(node) + ':' + path;
-  if (!tracks.has(key)) tracks.set(key, []);
-  tracks.get(key).push(...node[path === 'rotation' ? 'quaternion' : 'position'].toArray());
-}
 const rest = bones.map(node => node.quaternion.clone());
-const grip = new Map();
-for (let frame = 0; frame <= 72; frame++) {
-  times.push(frame / 30);
-  const rep = (1 - Math.cos(frame / 72 * Math.PI * 2)) / 2;
-  bones.forEach((node, index) => node.quaternion.copy(rest[index]));
-  root.position.y = 0.055 * rep;
-  record(root, 'translation');
-  for (const { upper, lower, hand, clavicle, clavicleRest, a, b } of arms) {
-    clavicle.position.copy(clavicleRest);
-    const lift = up.clone().transformDirection(clavicle.parent.matrixWorld.clone().invert());
-    clavicle.position.addScaledVector(lift, -0.05 * rep);
-    record(clavicle, 'translation');
-    const origin = world(upper);
-    const wrist = new Vector3(origin.x, wristY, barZ);
-    const direction = wrist.clone().sub(origin);
-    const distance = direction.length();
-    direction.normalize();
-    const along = (a*a - b*b + distance*distance) / (2 * distance);
-    const bend = new Vector3(0, 0, -1);
-    bend.addScaledVector(direction, -bend.dot(direction)).normalize();
-    const elbow = origin.clone().addScaledVector(direction, along)
-      .addScaledVector(bend, Math.sqrt(Math.max(0, a*a - along*along)));
-    aim(upper, lower, elbow);
-    aim(lower, hand, wrist);
-    if (world(hand).distanceTo(wrist) > 0.001) throw new Error('The wrist lost contact');
-    record(upper, 'rotation');
-    record(lower, 'rotation');
-    // Keep the palm orientation fixed while the shoulder moves.
-    if (frame === 0) grip.set(hand, hand.getWorldQuaternion(new Quaternion()));
-    hand.quaternion.copy(lower.getWorldQuaternion(new Quaternion()).invert().multiply(grip.get(hand)));
-    record(hand, 'rotation');
-    const side = asset.nodes[bones.indexOf(hand)].name.at(-1);
-    for (const finger of ['index', 'middle', 'ring', 'pinky']) {
-      for (const [joint, next, angle] of [['01', '02', 0.28], ['02', '03', 1.0], ['03', '04_leaf', 1.65]]) {
-        const segment = bone(`${finger}_${joint}_${side}`);
-        const tip = bone(`${finger}_${next}_${side}`);
-        const direction = new Vector3(0, Math.cos(angle), -Math.sin(angle));
-        aim(segment, tip, world(segment).add(direction));
-        record(segment, 'rotation');
+const times = Array.from({ length: 97 }, (_, frame) => frame / 30);
+const lateral = new Vector3(1, 0, 0);
+
+function ease(progress) {
+  const t = Math.min(1, Math.max(0, progress));
+  return t*t*(3 - 2*t);
+}
+
+function pitch(node, radians) {
+  const parent = node.parent.getWorldQuaternion(new Quaternion());
+  const axis = lateral.clone().applyQuaternion(parent.invert());
+  node.quaternion.premultiply(new Quaternion().setFromAxisAngle(axis, radians));
+}
+
+function bakeGrip(underhand) {
+  const tracks = new Map();
+  function record(node, path) {
+    const key = bones.indexOf(node) + ':' + path;
+    if (!tracks.has(key)) tracks.set(key, []);
+    const values = tracks.get(key);
+    const value = node[path === 'rotation' ? 'quaternion' : 'position'];
+    const previous = values.slice(-4);
+    // Preserve quaternion continuity when glTF interpolates neighboring samples.
+    const sign = path === 'rotation' && previous.length &&
+      value.dot(new Quaternion(...previous)) < 0 ? -1 : 1;
+    values.push(...value.toArray().map(component => component * sign));
+  }
+
+  const contacts = arms.map(({ upper }) => {
+    const x = world(upper).x;
+    const side = Math.sign(x);
+    return new Vector3(x + side * (underhand ? -0.035 : 0.065), wristY, barZ + (underhand ? -0.022 : 0.022));
+  });
+  const grips = [];
+  for (const time of times) {
+    // Pull up briskly, settle briefly at the top, then lower under control.
+    const rep = ease((time - 0.22) / 0.83) - ease((time - 1.24) / 1.46);
+    const swing = ease((time - 0.41) / 0.96) - ease((time - 1.69) / 1.31);
+    const followThrough = ease((time - 2.02) / 0.54) - ease((time - 2.63) / 0.57);
+    bones.forEach((node, index) => node.quaternion.copy(rest[index]));
+    root.position.y = (underhand ? 0.39 : 0.38) * rep;
+    root.position.z = -0.22 * rep;
+    record(root, 'translation');
+    arms.forEach(({ upper, lower, hand, clavicle, clavicleRest, a, b }, index) => {
+      clavicle.position.copy(clavicleRest);
+      const down = up.clone().transformDirection(clavicle.parent.matrixWorld.clone().invert());
+      clavicle.position.addScaledVector(down, -0.025 * rep);
+      record(clavicle, 'translation');
+      const origin = world(upper);
+      const wrist = contacts[index];
+      const direction = wrist.clone().sub(origin);
+      const distance = direction.length();
+      if (distance >= a + b || distance <= Math.abs(a - b)) throw new Error('Grip outside arm reach');
+      direction.normalize();
+      const along = (a*a - b*b + distance*distance) / (2 * distance);
+      // Steer elbows down and out for the overhand grip, closer to the ribs
+      // for the underhand grip. Project the pole into the plane of the solve.
+      const side = Math.sign(wrist.x);
+      const pole = new Vector3(side * (underhand ? 0.18 : 0.68), -1, underhand ? 0.72 : 0.55);
+      pole.addScaledVector(direction, -pole.dot(direction)).normalize();
+      const elbow = origin.clone().addScaledVector(direction, along)
+        .addScaledVector(pole, Math.sqrt(a*a - along*along));
+      const flexion = Math.PI - origin.clone().sub(elbow).angleTo(wrist.clone().sub(elbow));
+      if (flexion > 145 * Math.PI / 180 || (rep > 0.85 && elbow.y >= origin.y - 0.035)) {
+        throw new Error('Elbow pose outside the exercise limits');
       }
+      aim(upper, lower, elbow);
+      aim(lower, hand, wrist);
+      // Supination happens at the forearm. Counter-rotate the wrist to keep
+      // the grip orientation fixed against the bar throughout each rep.
+      if (underhand) lower.rotateY(Math.PI * 0.7);
+      if (world(hand).distanceTo(wrist) > 0.001) throw new Error('The wrist lost contact');
+      if (time === 0) grips[index] = hand.getWorldQuaternion(new Quaternion());
+      hand.quaternion.copy(lower.getWorldQuaternion(new Quaternion()).invert().multiply(grips[index]));
+      record(upper, 'rotation');
+      record(lower, 'rotation');
+      record(hand, 'rotation');
+    });
+    for (const side of ['l', 'r']) {
+      const thigh = bone(`thigh_${side}`);
+      const calf = bone(`calf_${side}`);
+      pitch(thigh, -0.09 * swing + 0.045 * followThrough);
+      pitch(calf, 0.15 * swing + 0.035 * followThrough);
+      record(thigh, 'rotation');
+      record(calf, 'rotation');
     }
   }
+  return tracks;
 }
 function accessor(values, type) {
   const data = Buffer.from(new Float32Array(values).buffer);
@@ -100,14 +139,19 @@ function accessor(values, type) {
   return asset.accessors.push({ bufferView: view, componentType: 5126, count: values.length / components, type, ...bounds }) - 1;
 }
 const input = accessor(times, 'SCALAR');
-const animation = { name: 'Scapular pull-up', samplers: [], channels: [] };
-for (const [key, values] of tracks) {
-  const [node, path] = key.split(':');
-  const output = accessor(values, path === 'rotation' ? 'VEC4' : 'VEC3');
-  const sampler = animation.samplers.push({ input, output }) - 1;
-  animation.channels.push({ sampler, target: { node: Number(node), path } });
-}
-asset.animations = [animation];
+asset.animations = [false, true].map(underhand => {
+  root.position.set(0, 0, 0);
+  bones.forEach((node, index) => node.quaternion.copy(rest[index]));
+  arms.forEach(({ clavicle, clavicleRest }) => clavicle.position.copy(clavicleRest));
+  const animation = { name: underhand ? 'Chin-up' : 'Pull-up', samplers: [], channels: [] };
+  for (const [key, values] of bakeGrip(underhand)) {
+    const [node, path] = key.split(':');
+    const output = accessor(values, path === 'rotation' ? 'VEC4' : 'VEC3');
+    const sampler = animation.samplers.push({ input, output }) - 1;
+    animation.channels.push({ sampler, target: { node: Number(node), path } });
+  }
+  return animation;
+});
 asset.extras = { barY: wristY + 0.07, barZ };
 asset.buffers[0].byteLength = offset;
 let json = Buffer.from(JSON.stringify(asset));
@@ -121,4 +165,4 @@ header.write('JSON', 16);
 const dataHeader = Buffer.alloc(8);
 dataHeader.writeUInt32LE(offset);
 dataHeader.write('BIN\0', 4);
-writeFileSync(new URL('../public/scapular-pull-up.glb', import.meta.url), Buffer.concat([header, json, dataHeader, ...binary]));
+writeFileSync(new URL('../public/pull-up.glb', import.meta.url), Buffer.concat([header, json, dataHeader, ...binary]));

@@ -7,12 +7,14 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import './style.css';
 import { createRobot } from './robot';
 
-type Viewer = { view: (side: boolean) => void; replay: () => void };
+type Viewer = { view: (side: boolean) => void; replay: () => void; grip: (underhand: boolean) => void };
 
 function App() {
   const host = useRef<HTMLDivElement>(null);
   const viewer = useRef<Viewer | null>(null);
   const playing = useRef(!matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const grip = useRef(false);
+  const [underhand, setUnderhand] = useState(false);
   const [paused, setPaused] = useState(!playing.current);
   const [status, setStatus] = useState<'loading' | 'ready' | 'failed'>('loading');
 
@@ -30,7 +32,7 @@ function App() {
     }
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     container.append(renderer.domElement);
-    renderer.domElement.setAttribute('aria-label', 'Interactive 3D scapular pull-up demonstration');
+    renderer.domElement.setAttribute('aria-label', 'Interactive 3D pull-up demonstration');
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enablePan = false;
     controls.minDistance = 3.5;
@@ -58,15 +60,15 @@ function App() {
 
     let disposed = false;
     let mixer: THREE.AnimationMixer | undefined;
-    let updateRobot: (() => void) | undefined;
+    let updateRobot: ((underhand: boolean) => void) | undefined;
     let previous = performance.now();
     const fail = () => { if (!disposed) setStatus('failed'); };
     renderer.domElement.addEventListener('webglcontextlost', fail);
-    new GLTFLoader().load(import.meta.env.BASE_URL + 'scapular-pull-up.glb', ({ scene: model, animations, userData }) => {
+    new GLTFLoader().load(import.meta.env.BASE_URL + 'pull-up.glb', ({ scene: model, animations, userData }) => {
       if (disposed) return;
       const { barY, barZ } = userData;
       const clip = animations[0];
-      if (!clip || !Number.isFinite(barY) || !Number.isFinite(barZ)) { fail(); return; }
+      if (animations.length !== 2 || !clip || !Number.isFinite(barY) || !Number.isFinite(barZ)) { fail(); return; }
       model.traverse(object => { if (object instanceof THREE.Mesh) object.visible = false; });
       scene.add(model);
       updateRobot = createRobot(model, scene);
@@ -76,14 +78,23 @@ function App() {
       bar.position.set(0, barY, barZ);
       scene.add(bar);
       mixer = new THREE.AnimationMixer(model);
-      const action = mixer.clipAction(clip).play();
+      let action = mixer.clipAction(clip).play();
       mixer.update(0);
-      viewer.current = { view, replay: () => { action.reset().play(); mixer?.update(0); } };
+      viewer.current = {
+        view,
+        replay: () => { action.reset().play(); mixer?.update(0); },
+        grip: (value) => {
+          if (!mixer) return;
+          action.stop();
+          action = mixer.clipAction(animations[value ? 1 : 0]).reset().play();
+          mixer.update(0);
+        },
+      };
       setStatus('ready');
     }, undefined, fail);
     renderer.setAnimationLoop(now => {
       if (playing.current) mixer?.update(Math.min((now - previous) / 1000, 0.05));
-      updateRobot?.();
+      updateRobot?.(grip.current);
       previous = now;
       renderer.render(scene, camera);
     });
@@ -111,12 +122,22 @@ function App() {
     setPaused(!playing.current);
   }
 
+  function selectGrip(value: boolean) {
+    grip.current = value;
+    setUnderhand(value);
+    viewer.current?.grip(value);
+  }
+
   return <main>
-    <header><p className="brand">Climbing Strength Library</p><h1>Scapular pull-up</h1>
-      <p>Hang from the bar. Keep your elbows nearly straight as you draw your shoulders down, then return to the hang.</p></header>
+    <header><p className="brand">Climbing Strength Library</p><h1>{underhand ? "Chin-up" : "Pull-up"}</h1>
+      <p>Hang from the bar. Draw your elbows down to lift your chest toward the bar, then lower back to a full hang.</p></header>
     <section aria-label="Exercise demonstration">
+      {status === 'ready' && <div className="controls" role="group" aria-label="Grip">
+        <button aria-pressed={!underhand} onClick={() => selectGrip(false)}>Overhand</button>
+        <button aria-pressed={underhand} onClick={() => selectGrip(true)}>Underhand</button>
+      </div>}
       <div className="stage" ref={host} data-status={status}>
-        {status !== 'ready' && <img src={import.meta.env.BASE_URL + 'scapular-pull-up.png'} alt="Mannequin hanging from a pull-up bar" />}
+        {status !== 'ready' && <img src={import.meta.env.BASE_URL + 'pull-up.png'} alt="Mannequin hanging from a pull-up bar" />}
       </div>
       {status === 'loading' && <p role="status">Loading 3D demonstration…</p>}
       {status === 'failed' && <p role="status">The 3D viewer is unavailable. The still above shows the starting position.</p>}
