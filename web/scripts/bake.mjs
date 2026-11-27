@@ -38,6 +38,9 @@ const arms = ['l', 'r'].map(side => {
 const shoulder = world(arms[0].upper);
 const wristY = shoulder.y + arms[0].a + arms[0].b - 0.012;
 const barZ = shoulder.z + 0.035;
+const barY = wristY + 0.07;
+// Conservative side-view envelope for the robot head, visor, and bar radius.
+const headClearance = 0.13;
 const up = new Vector3(0, 1, 0);
 const rest = bones.map(node => node.quaternion.clone());
 const times = Array.from({ length: 97 }, (_, frame) => frame / 30);
@@ -71,7 +74,7 @@ function bakeGrip(underhand) {
   const contacts = arms.map(({ upper }) => {
     const x = world(upper).x;
     const side = Math.sign(x);
-    return new Vector3(x + side * (underhand ? -0.035 : 0.065), wristY, barZ + (underhand ? -0.022 : 0.022));
+    return new Vector3(x + side * (underhand ? -0.035 : 0.065), wristY, barZ + (underhand ? 0.022 : -0.022));
   });
   const grips = [];
   for (const time of times) {
@@ -81,7 +84,21 @@ function bakeGrip(underhand) {
     const followThrough = ease((time - 2.02) / 0.54) - ease((time - 2.63) / 0.57);
     bones.forEach((node, index) => node.quaternion.copy(rest[index]));
     root.position.y = (underhand ? 0.39 : 0.38) * rep;
-    root.position.z = -0.22 * rep;
+    root.position.z = -0.15 * rep;
+    const head = world(bone('Head'));
+    const headY = head.y + 0.073;
+    const verticalGap = headY - barY;
+    if (Math.abs(verticalGap) < headClearance) {
+      const requiredGap = Math.sqrt(headClearance**2 - verticalGap**2);
+      root.position.z -= Math.max(0, requiredGap - (barZ - head.z));
+    }
+    const clearedHead = world(bone('Head'));
+    if (Math.hypot(verticalGap, barZ - clearedHead.z) < headClearance - 0.0001) {
+      throw new Error('Head intersects the bar clearance envelope');
+    }
+    // Swing the legs forward to balance the upper body's clearance arc.
+    // This is an authored counterbalance using an approximate leg lever arm.
+    const legCounterbalance = Math.asin(Math.min(0.43, -2 * root.position.z / 0.65));
     record(root, 'translation');
     arms.forEach(({ upper, lower, hand, clavicle, clavicleRest, a, b }, index) => {
       clavicle.position.copy(clavicleRest);
@@ -98,13 +115,13 @@ function bakeGrip(underhand) {
       // Steer elbows down and out for the overhand grip, closer to the ribs
       // for the underhand grip. Project the pole into the plane of the solve.
       const side = Math.sign(wrist.x);
-      const pole = new Vector3(side * (underhand ? 0.18 : 0.68), -1, underhand ? 0.72 : 0.55);
+      const pole = new Vector3(side * (underhand ? 0.14 : 0.48), -1, underhand ? 1.35 : 1.05);
       pole.addScaledVector(direction, -pole.dot(direction)).normalize();
       const elbow = origin.clone().addScaledVector(direction, along)
         .addScaledVector(pole, Math.sqrt(a*a - along*along));
       const flexion = Math.PI - origin.clone().sub(elbow).angleTo(wrist.clone().sub(elbow));
       if (flexion > 145 * Math.PI / 180 || (rep > 0.85 && elbow.y >= origin.y - 0.035)) {
-        throw new Error('Elbow pose outside the exercise limits');
+        throw new Error(`Elbow pose outside exercise limits: grip=${underhand ? 'underhand' : 'overhand'}, time=${time}, flexion=${flexion * 180 / Math.PI}, drop=${origin.y - elbow.y}`);
       }
       aim(upper, lower, elbow);
       aim(lower, hand, wrist);
@@ -121,8 +138,8 @@ function bakeGrip(underhand) {
     for (const side of ['l', 'r']) {
       const thigh = bone(`thigh_${side}`);
       const calf = bone(`calf_${side}`);
-      pitch(thigh, -0.09 * swing + 0.045 * followThrough);
-      pitch(calf, 0.15 * swing + 0.035 * followThrough);
+      pitch(thigh, -legCounterbalance - 0.04 * swing + 0.045 * followThrough);
+      pitch(calf, 0.08 * swing + 0.035 * followThrough);
       record(thigh, 'rotation');
       record(calf, 'rotation');
     }
@@ -152,7 +169,7 @@ asset.animations = [false, true].map(underhand => {
   }
   return animation;
 });
-asset.extras = { barY: wristY + 0.07, barZ };
+asset.extras = { barY, barZ };
 asset.buffers[0].byteLength = offset;
 let json = Buffer.from(JSON.stringify(asset));
 json = Buffer.concat([json, Buffer.alloc((4 - json.length % 4) % 4, 32)]);

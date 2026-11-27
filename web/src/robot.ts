@@ -86,7 +86,7 @@ export function createRobot(rig: THREE.Object3D, scene: THREE.Scene) {
       ]);
       hand.add(new THREE.Mesh(new THREE.TubeGeometry(curl, 8, 0.009, 6, false), joint));
     }
-    const thumbSide = side === 'l' ? -1 : 1;
+    const thumbSide = side === 'l' ? 1 : -1;
     const thumb = new THREE.CatmullRomCurve3([
       new THREE.Vector3(thumbSide * 0.036, 0.024, 0.006),
       new THREE.Vector3(thumbSide * 0.059, 0.049, -0.016),
@@ -95,7 +95,8 @@ export function createRobot(rig: THREE.Object3D, scene: THREE.Scene) {
     hand.add(new THREE.Mesh(new THREE.TubeGeometry(thumb, 8, 0.012, 7, false), accent));
     updates.push(underhand => {
       wrist.getWorldPosition(hand.position);
-      hand.rotation.y = underhand ? Math.PI : 0;
+      // The mannequin faces +Z. Overhand palms face away from its torso.
+      hand.rotation.y = underhand ? 0 : Math.PI;
     });
   }
 
